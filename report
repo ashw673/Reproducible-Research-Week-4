@@ -1,0 +1,230 @@
+title: “Analyzing health and economic consequences of severe weather events in USA” author: “Vyomesh Tewari” date: “13/07/2020”
+
+Analyzing health and economic consequences of severe weather events in USA
+The data was obtained from its raw format and processed to make it suitable for analysis. After this injury and fatalities were plotted in one graph, and crop damage and property damage on another. The means were used to classify high damage events.
+
+Data Processing
+Below is the code for cleaning the data and making it suitable for analysis
+
+library(dplyr)
+library(tidyverse)
+library(reshape2)
+library(lubridate)
+library(ggplot2)
+library(ggrepel)
+
+
+rawstormdata <- read.csv("repdata_data_StormData.csv.bz2")
+
+
+
+stormdata <- tbl_df(rawstormdata)
+
+
+
+datelist <- strsplit(stormdata$BGN_DATE, split = " ")
+datelist <- sapply(datelist, function(l) l[[1]])
+stormdata$BGN_DATE <- datelist
+
+
+timefix <- function(timelist){
+
+
+
+        for(i in 1:length(timelist)){
+
+                word <- timelist[i]
+                word <- paste(substr(word,1,2), ":",substr(word,3,4),":","0","0", sep = "")
+                timelist[i] <- word
+
+
+        }
+        timelist
+
+}
+
+timelist <- stormdata$BGN_TIME
+
+timelist <- timefix(timelist)
+
+stormdata$BGN_TIME <- timelist
+
+
+
+datetime <- paste(stormdata$BGN_DATE,  " ", stormdata$BGN_TIME)
+stormdata$bgn_datetime <- datetime
+
+
+stormdata$COUNTY <- factor(stormdata$COUNTY)
+
+stormdata$COUNTYNAME <- factor(stormdata$COUNTYNAME)
+
+
+
+stormdata$STATE <- factor(stormdata$STATE)
+
+ss <- rename(stormdata,"fipscode" = "STATE__")
+stormdata <- ss
+
+
+stormdata$bgn_datetime <- mdy_hms(stormdata$bgn_datetime)
+## Warning: 5 failed to parse.
+stormdata <- filter(stormdata, year(bgn_datetime)>1995)
+
+
+library(stringdist)
+
+stormevents <- "Astronomical Low Tide,Avalanche,Blizzard,Coastal Flood,Cold/Wind Chill,Debris Flow,Dense Fog,Dense Smoke,Drought,Dust Devil,Dust Storm,Excessive Heat,Extreme Cold/Wind Chill,Flash Flood,Flood,Frost/Freeze,Funnel Cloud,Freezing Fog,Hail,Heat,Heavy Rain,Heavy Snow,High Surf,High Wind,Hurricane(Typhoon),Ice Storm,Lake-Effect Snow,Lakeshore Flood,Lightning,Marine Hail,Marine High Wind,Marine Strong Wind,Marine Thunderstorm Wind,Rip Current,Seiche,Sleet,Storm Surge/Tide,Strong Wind,Thunderstorm Wind,Tornado,Tropical Depression,Tropical Storm,Tsunami,Volcanic Ash,Watersprout,Wildfire,Winter Storm,Winter Weather"
+
+stormevents <- strsplit(stormevents, split = ",")
+stormevents <- stormevents[[1]]
+
+
+
+
+ccdata <- select(stormdata, -c("LONGITUDE", "LATITUDE_E","LATITUDE", "LONGITUDE_"))
+
+evlist <- ccdata$EVTYPE
+
+
+for(i in 1:length(evlist)){
+
+        randomword <- evlist[i]
+
+        x <- amatch(randomword, stormevents, maxDist = 27)
+        y <- is.na(x)
+        if (y==TRUE){
+                print("Insufficient distance")
+                break
+        }
+        else {
+                evlist[i]  <- stormevents[x]
+        }
+
+}
+
+ccdata$EVTYPE <- evlist
+
+ccdata$proptotaldamage <- ccdata$PROPDMG
+
+for( i in 1:length(ccdata$PROPDMG)){
+
+        x <- ccdata$PROPDMG[i]
+        y <- ccdata$PROPDMGEXP[i]
+
+        if(y=="K"){
+
+                x <- x*1000
+                ccdata$proptotaldamage[i] <- x
+        }
+        else if (y=="M"){
+
+                x <- x*1000000
+                ccdata$proptotaldamage[i] <- x
+        }
+        else if (y=="B"){
+
+                x <- x*1000000000
+                ccdata$proptotaldamage[i] <- x
+        }
+        else if (y=="0"){
+
+                x <- x*10
+                ccdata$proptotaldamage[i] <- x
+        }
+}
+
+ccdata$croptotaldamage <- ccdata$CROPDMG
+
+for( i in 1:length(ccdata$CROPDMG)){
+
+        x <- ccdata$CROPDMG[i]
+        y <- ccdata$CROPDMGEXP[i]
+
+        if(y=="K"){
+
+                x <- x*1000
+                ccdata$croptotaldamage[i] <- x
+        }
+        else if (y=="M"){
+
+                x <- x*1000000
+                ccdata$croptotaldamage[i] <- x
+        }
+        else if (y=="B"){
+
+                x <- x*1000000000
+                ccdata$croptotaldamage[i] <- x
+        }
+
+}
+In the below code I take a sample of about 100,000 observations to judge the effect of the events
+
+set.seed(1234)
+
+randrows <- sample(1:length(ccdata$proptotaldamage), 100000)
+
+sampleddata <- ccdata[randrows,]
+Observations
+The given code will produce the graphs we require to reach our results
+
+fatalities <- tapply(sampleddata$FATALITIES, sampleddata$EVTYPE, sum)
+injuries <- tapply(sampleddata$INJURIES, sampleddata$EVTYPE, sum)
+
+healthtable <- cbind(fatalities, injuries)
+finalhtable <- tbl_df(healthtable)
+finalhtable$events <- rownames(healthtable)
+
+
+topdamage <- filter(finalhtable, injuries >= mean(injuries) | fatalities >= mean(fatalities))
+
+g <- ggplot(data = finalhtable, aes(x = injuries, y = fatalities))
+g + geom_point()  + 
+        geom_hline(yintercept = mean(fatalities), color = "red") + 
+        geom_vline(xintercept = mean(injuries), color = "red") +
+        geom_label_repel(data = topdamage, aes(label = events), alpha = 0.5,box.padding = 0.35, point.padding = 0.5, segment.color = "grey50") +
+        theme_bw() + 
+        labs(x = "Injuries in Events", y = "Fatalities in Events", title = "Plotting Injury and Fatality Statistics for different events")
+plot of chunk Graphs for Analysis
+
+propertydamage <- tapply(sampleddata$proptotaldamage, sampleddata$EVTYPE, sum)
+cropdamage <- tapply(sampleddata$croptotaldamage, sampleddata$EVTYPE, sum)
+
+
+
+damagetable <- cbind(propertydamage, cropdamage)
+
+finaldtable <- tbl_df(damagetable)
+finaldtable$events <- rownames(damagetable)
+
+
+toploss <- filter(finaldtable, propertydamage >= mean(propertydamage) | cropdamage >= mean(cropdamage))
+
+g <- ggplot(data = finaldtable, aes(x = cropdamage, y = propertydamage))
+g + geom_point()  + 
+        geom_hline(yintercept = mean(propertydamage), color = "red") + 
+        geom_vline(xintercept = mean(cropdamage), color = "red") +
+        geom_label_repel(data = toploss, aes(label = events), alpha = 0.5,box.padding = 0.35, point.padding = 0.5, segment.color = "grey50") +
+        theme_bw() + 
+        labs(x = "Crop Damage in Events", y = "Property Damage in Events", title = "Plotting Crop and Property Damage Statistics for different events")
+plot of chunk Graphs for Analysis
+
+The horizontal red line in both graphs represents the mean of the value on the y axis, and the vertical red line in both graphs represents the mean of the value on the x axis.
+
+Results
+Looking at the two graphs, we can talk about the damage to life and to economy.
+
+Economic Damage
+Events with above average property and crop damage - Hail - Flood - Ice storm
+Events with only above average property damage - Flash Flood - Tornado - Debris Flow - Dense Smoke
+Events with only above average crop damage - Heavy Rain - Drought
+It should be noted that Dense Smoke stands out in damage to property and Drought stands out in damage to crops. Hail and Flood do considerable damage to both.
+
+Damage to Life
+Events with above average fatality rate and injury rate - Hail - Ice Storm - High Wind - Flood - Tornado - Excessive Heat - Flash Flood
+
+Events with only above average injury rate - Rip Current - Avalanche
+
+Events with only above average fatality rate -
+
+It should be noted that Excessive Heat and Tornado stands out in damage to human life
